@@ -1,7 +1,7 @@
 /* Tiger Fitness — service worker: precache app shell + data, offline-first. */
 'use strict';
 
-var VERSION = 'tf-v2.0.0';
+var VERSION = 'tf-v2.1.0'; // v2.1.0: Tiger Fitness logo icons
 var PRECACHE = [
   './',
   './index.html',
