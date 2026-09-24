@@ -1,7 +1,7 @@
 /* Tiger Fitness — service worker: precache app shell + data, offline-first. */
 'use strict';
 
-var VERSION = 'tf-v2.2.0'; // v2.2.0: robust update flow (feedback, fallback, stale-offer suppression)
+var VERSION = 'tf-v2.2.1'; // v2.2.1: fix permanently-visible update bar ([hidden] vs display:flex)
 var PRECACHE = [
   './',
   './index.html',
