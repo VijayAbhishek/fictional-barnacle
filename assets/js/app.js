@@ -82,33 +82,87 @@
 
   /* ---------------- PWA ---------------- */
 
+  var SW_HISTORY_KEY = 'tf_sw_seen_versions';
+
+  function seenVersions() {
+    try { return JSON.parse(localStorage.getItem(SW_HISTORY_KEY)) || []; } catch (e) { return []; }
+  }
+  function rememberVersion(v) {
+    if (!v) return;
+    var seen = seenVersions();
+    if (seen.indexOf(v) === -1) {
+      seen.push(v);
+      if (seen.length > 20) seen = seen.slice(-20);
+      try { localStorage.setItem(SW_HISTORY_KEY, JSON.stringify(seen)); } catch (e) { /* non-critical */ }
+    }
+  }
+
+  // Ask a worker which VERSION it is (1s timeout -> null).
+  function workerVersion(worker) {
+    return new Promise(function (resolve) {
+      if (!worker) { resolve(null); return; }
+      var timer = setTimeout(function () { resolve(null); }, 1000);
+      var channel = new MessageChannel();
+      channel.port1.onmessage = function (e) {
+        clearTimeout(timer);
+        resolve(e.data && e.data.version);
+      };
+      try { worker.postMessage({ type: 'GET_VERSION' }, [channel.port2]); }
+      catch (e) { clearTimeout(timer); resolve(null); }
+    });
+  }
+
   function registerSW() {
     if (!('serviceWorker' in navigator)) return;
     if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') return;
     navigator.serviceWorker.register('sw.js').then(function (reg) {
+      // remember the version we're actually running — the ground truth of "already had this"
+      workerVersion(reg.active).then(rememberVersion);
+      // an update may already be sitting here from a previous session
+      if (reg.waiting && navigator.serviceWorker.controller) maybeOfferUpdate(reg);
       reg.addEventListener('updatefound', function () {
         var nw = reg.installing;
         if (!nw) return;
         nw.addEventListener('statechange', function () {
           if (nw.state === 'installed' && navigator.serviceWorker.controller) {
-            showUpdateBar(reg);
+            maybeOfferUpdate(reg);
           }
         });
       });
     }).catch(function () { /* SW is progressive enhancement */ });
   }
 
+  // Only offer versions we've never run: right after a deploy, CDN edges can briefly
+  // serve the PREVIOUS build again, which would otherwise re-offer itself as an "update".
+  function maybeOfferUpdate(reg) {
+    workerVersion(reg.waiting).then(function (v) {
+      if (v && seenVersions().indexOf(v) !== -1) return; // stale re-offer — ignore quietly
+      showUpdateBar(reg);
+    });
+  }
+
   function showUpdateBar(reg) {
     var bar = document.getElementById('update-bar');
-    if (!bar) return;
+    var btn = document.getElementById('update-btn');
+    if (!bar || !btn) return;
     bar.hidden = false;
-    document.getElementById('update-btn').onclick = function () {
-      // reload only once the new worker actually controls the page (no timer race)
-      navigator.serviceWorker.addEventListener('controllerchange', function () {
+    btn.disabled = false;
+    btn.textContent = 'Refresh';
+    btn.onclick = function () {
+      btn.disabled = true;
+      btn.textContent = 'Updating…'; // immediate feedback — the tap always visibly does something
+      var reloaded = false;
+      function go() {
+        if (reloaded) return;
+        reloaded = true;
         location.reload();
-      }, { once: true });
+      }
+      // normal path: reload the moment the new worker takes control
+      navigator.serviceWorker.addEventListener('controllerchange', go, { once: true });
+      // fallback: never leave the button dead if that signal doesn't arrive
+      setTimeout(go, 3000);
       if (reg.waiting) reg.waiting.postMessage('SKIP_WAITING');
-      else location.reload();
+      else go();
     };
   }
 

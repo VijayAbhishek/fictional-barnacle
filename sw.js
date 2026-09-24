@@ -1,7 +1,7 @@
 /* Tiger Fitness — service worker: precache app shell + data, offline-first. */
 'use strict';
 
-var VERSION = 'tf-v2.1.0'; // v2.1.0: Tiger Fitness logo icons
+var VERSION = 'tf-v2.2.0'; // v2.2.0: robust update flow (feedback, fallback, stale-offer suppression)
 var PRECACHE = [
   './',
   './index.html',
@@ -47,7 +47,11 @@ self.addEventListener('activate', function (event) {
 });
 
 self.addEventListener('message', function (event) {
-  if (event.data === 'SKIP_WAITING') self.skipWaiting();
+  if (event.data === 'SKIP_WAITING') { self.skipWaiting(); return; }
+  // version handshake: lets the page compare workers and ignore stale CDN re-offers
+  if (event.data && event.data.type === 'GET_VERSION' && event.ports && event.ports[0]) {
+    event.ports[0].postMessage({ version: VERSION });
+  }
 });
 
 // Cache-first for same-origin GET (app is fully local); network fallback updates the cache.
